@@ -1,15 +1,96 @@
+
 (() => {
- const cfg=window.STAR_PAGES_CONFIG, grid=document.getElementById('bookGrid'); let selected=null;
- const money=n=>new Intl.NumberFormat('en-IN',{style:'currency',currency:cfg.currency,maximumFractionDigits:0}).format(n);
- function card(b,i){const cover=b.cover?`<img src="${b.cover}" alt="${b.title} cover">`:`<div class="cover-placeholder ${b.accent||'blue'}"><span class="cover-star">✦</span><strong>${b.title}</strong><small>STAR PAGES PUBLISHING</small><i>${String(i+1).padStart(2,'0')}</i></div>`;return `<article class="book-card" data-category="${b.category}"><div class="cover-wrap">${cover}<span class="book-tag">${b.categoryLabel}</span></div><div class="book-info"><div class="book-meta">${b.format||'Paperback & eBook'}</div><h3>${b.title}</h3><p>${b.description}</p><div class="edition-prices"><span>Paperback <b>${money(b.prices.paperback)}</b></span><span>eBook <b>${money(b.prices.ebook)}</b></span></div><div class="book-buy"><button class="buy-button" data-id="${b.id}">Choose edition ↗</button></div></div></article>`}
- function render(filter='all'){grid.innerHTML=cfg.books.filter(b=>filter==='all'||b.category===filter).map(card).join('');grid.querySelectorAll('.buy-button').forEach(btn=>btn.addEventListener('click',()=>openCheckout(cfg.books.find(b=>b.id===btn.dataset.id))));}
- document.querySelectorAll('.filter').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.filter').forEach(x=>x.classList.remove('active'));btn.classList.add('active');render(btn.dataset.filter)}));
- const modal=document.getElementById('checkoutModal');
- function openCheckout(book){selected=book;document.getElementById('modalTitle').textContent=book.title;const edition=document.getElementById('editionSelect');edition.innerHTML=`<option value="paperback">Paperback — ${money(book.prices.paperback)}</option><option value="ebook">eBook — ${money(book.prices.ebook)}</option>`;updatePrice();document.getElementById('checkoutStatus').textContent='';modal.classList.add('open');modal.setAttribute('aria-hidden','false')}
- function updatePrice(){const edition=document.getElementById('editionSelect').value;document.getElementById('modalPrice').textContent=(edition==='ebook'?'eBook':'Paperback')+' · '+money(selected.prices[edition])}
- document.getElementById('editionSelect').addEventListener('change',updatePrice);
- function close(){modal.classList.remove('open');modal.setAttribute('aria-hidden','true')}document.querySelector('.modal-close').addEventListener('click',close);modal.addEventListener('click',e=>{if(e.target===modal)close()});
- document.getElementById('checkoutForm').addEventListener('submit',async e=>{e.preventDefault();const status=document.getElementById('checkoutStatus'),form=new FormData(e.currentTarget),customer=Object.fromEntries(form.entries()),edition=document.getElementById('editionSelect').value,submit=e.currentTarget.querySelector('button[type=submit]');submit.disabled=true;status.textContent='Creating secure order…';try{const r=await fetch('/.netlify/functions/create-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bookId:selected.id,edition,customer})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Could not create order.');const options={key:data.keyId,amount:data.amount,currency:data.currency,name:'Star Pages Publishing',description:selected.title+' — '+(edition==='ebook'?'eBook':'Paperback'),order_id:data.orderId,prefill:{name:customer.name,email:customer.email,contact:customer.phone},theme:{color:'#273c32'},handler:async response=>{status.textContent='Verifying your payment…';const verify=await fetch('/.netlify/functions/verify-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...response,bookId:selected.id,edition,customer})});const result=await verify.json();if(!verify.ok)throw new Error(result.error||'Payment verification failed.');status.textContent='Payment verified! Order reference: '+result.orderId+'. Please email '+cfg.publisherEmail+' with this reference for fulfilment.';e.currentTarget.reset();}};const checkout=new Razorpay(options);checkout.on('payment.failed',response=>{status.textContent='Payment was not completed: '+(response.error.description||'Please try again.');});checkout.open();}catch(err){status.textContent=err.message}finally{submit.disabled=false}});
- document.querySelector('.menu-toggle').addEventListener('click',()=>document.querySelector('nav').classList.toggle('show'));document.querySelectorAll('nav a').forEach(a=>a.addEventListener('click',()=>document.querySelector('nav').classList.remove('show')));
- document.getElementById('year').textContent=new Date().getFullYear();document.getElementById('emailLink').href='mailto:'+cfg.publisherEmail;render();
+  const cfg = window.STAR_PAGES_CONFIG;
+  const grid = document.getElementById("bookGrid");
+
+  // Format book cards
+  function card(book, index) {
+    const cover = book.cover
+      ? `<img src="${book.cover}" alt="${book.title} cover">`
+      : `<div class="cover-placeholder ${book.accent || "blue"}">
+           <span class="cover-star">✦</span>
+           <strong>${book.title}</strong>
+           <small>STAR PAGES PUBLISHING</small>
+           <i>${String(index + 1).padStart(2, "0")}</i>
+         </div>`;
+
+    const amazonButton = book.amazonUrl
+      ? `<a class="buy-button"
+            href="${book.amazonUrl}"
+            target="_blank"
+            rel="noopener noreferrer">
+            Buy on Amazon ↗
+         </a>`
+      : `<span class="book-meta">Amazon link coming soon</span>`;
+
+    return `
+      <article class="book-card" data-category="${book.category}">
+        <div class="cover-wrap">
+          ${cover}
+          <span class="book-tag">${book.categoryLabel}</span>
+        </div>
+
+        <div class="book-info">
+          <div class="book-meta">Published book</div>
+          <h3>${book.title}</h3>
+          <p>${book.description}</p>
+
+          <div class="book-buy">
+            ${amazonButton}
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
+  // Display books
+  function render(filter = "all") {
+    const books = cfg.books.filter(book =>
+      filter === "all" || book.category === filter
+    );
+
+    grid.innerHTML = books.map(card).join("");
+  }
+
+  // Book category filters
+  document.querySelectorAll(".filter").forEach(button => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".filter").forEach(item =>
+        item.classList.remove("active")
+      );
+
+      button.classList.add("active");
+      render(button.dataset.filter);
+    });
+  });
+
+  // Mobile navigation
+  const menu = document.querySelector(".menu-toggle");
+  const nav = document.querySelector("nav");
+
+  if (menu && nav) {
+    menu.addEventListener("click", () => {
+      nav.classList.toggle("show");
+    });
+
+    nav.querySelectorAll("a").forEach(link => {
+      link.addEventListener("click", () => {
+        nav.classList.remove("show");
+      });
+    });
+  }
+
+  // Footer
+  const year = document.getElementById("year");
+  if (year) year.textContent = new Date().getFullYear();
+
+  const email = document.getElementById("emailLink");
+  if (email) {
+    email.href = "mailto:" + cfg.publisherEmail;
+  }
+
+  // Display catalogue
+  if (grid && cfg && Array.isArray(cfg.books)) {
+    render();
+  }
 })();
